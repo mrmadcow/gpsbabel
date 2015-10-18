@@ -32,6 +32,8 @@ unsigned int interval = 0;
 static char* opt_dist = NULL;
 double dist = 0;
 static char* opt_route = NULL;
+// static char* opt_alt_los = NULL;
+static char* opt_alt_msl = NULL;
 
 static
 arglist_t interpfilt_args[] = {
@@ -49,6 +51,14 @@ arglist_t interpfilt_args[] = {
     "route", &opt_route, "Interpolate routes instead", NULL,
     ARGTYPE_BOOL, ARG_NOMINMAX
   },
+/*  {
+    "altitude_los", &opt_alt_los, "Interpolate altitude using line-of-sight propagation", NULL,
+    ARGTYPE_BOOL, ARG_NOMINMAX
+  },*/
+    {
+    "altitude_msl", &opt_alt_msl, "Interpolate altitude w.r.t sea level (curved interpolation for longer distances)", NULL,
+    ARGTYPE_BOOL, ARG_NOMINMAX
+  },
   ARG_TERMINATOR
 };
 
@@ -60,7 +70,7 @@ interpfilt_process(void)
   route_head* rte_new;
   int count = 0;
   int first = 0;
-  double lat1 = 0, lon1 = 0;
+  double lat1 = 0, lon1 = 0, alt1 = 0;
   unsigned int time1 = 0;
   unsigned int timen;
   double distn;
@@ -102,13 +112,16 @@ interpfilt_process(void)
             wpt_new->SetCreationTime(timen);
             wpt_new->shortname = QString();
             wpt_new->description = QString();
-
+	    double frac = (double)(timen-time1)/
+                     (double)(wpt->creation_time.toTime_t() - time1);
             linepart(lat1, lon1,
                      wpt->latitude, wpt->longitude,
-                     (double)(timen-time1)/
-                     (double)(wpt->creation_time.toTime_t() - time1),
+		     frac,
                      &wpt_new->latitude,
                      &wpt_new->longitude);
+	    if (opt_alt_msl) {
+	      *(&wpt_new->altitude) = alt1 + frac * (wpt->altitude - alt1);	      
+	    }
             if (opt_route) {
               route_add_wpt(rte_new, wpt_new);
             } else {
@@ -131,11 +144,16 @@ interpfilt_process(void)
                                        (wpt->creation_time.toTime_t() - time1) + time1);
               wpt_new->shortname = QString();
               wpt_new->description = QString();
+	      double frac = distn/curdist;
               linepart(lat1, lon1,
                        wpt->latitude, wpt->longitude,
-                       distn/curdist,
+                       frac,
                        &wpt_new->latitude,
                        &wpt_new->longitude);
+	    if (opt_alt_msl) {
+	      *(&wpt_new->altitude) = alt1 + frac * (wpt->altitude - alt1);	      
+	    }
+
               if (opt_route) {
                 route_add_wpt(rte_new, wpt_new);
               } else {
@@ -153,6 +171,7 @@ interpfilt_process(void)
 
       lat1 = wpt->latitude;
       lon1 = wpt->longitude;
+      alt1 = wpt->altitude;
       time1 = wpt->creation_time.toTime_t();
     }
   }
@@ -176,6 +195,7 @@ interpfilt_init(const char* args)
     if ((*fm == 'k') || (*fm == 'K')) {
       /* distance is kilometers, convert to miles */
       dist *= .6214;
+//       printf("%f\n", dist);
     }
   } else {
     fatal(MYNAME ": No interval specified.\n");
